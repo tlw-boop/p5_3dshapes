@@ -65,7 +65,7 @@
       color: var(--muted);
       margin: 10px 0 6px;
     }
-    select, input{
+    select{
       width:100%;
       padding: 11px 12px;
       border-radius: 12px;
@@ -75,7 +75,7 @@
       outline: none;
       font-size: 15px;
     }
-    select:focus, input:focus{
+    select:focus{
       border-color: rgba(102,227,255,0.65);
       box-shadow: 0 0 0 3px rgba(102,227,255,0.16);
     }
@@ -213,11 +213,11 @@
       <div class="panel">
         <div class="row">
           <div>
-            <label for="edgesSel">稜數（Edge）</label>
+            <label for="edgesSel">稜數（6–60）</label>
             <select id="edgesSel"></select>
           </div>
           <div>
-            <label for="vertsSel">頂點數（Vertex）</label>
+            <label for="vertsSel">頂點數（4–40）</label>
             <select id="vertsSel"></select>
           </div>
         </div>
@@ -263,7 +263,7 @@
     import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
     import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 
-    // ====== UI：建立選項（稜/頂點） ======
+    // ====== UI：建立選項（只能用下拉選單，不能輸入） ======
     const edgesSel = document.getElementById("edgesSel");
     const vertsSel = document.getElementById("vertsSel");
     const confirmBtn = document.getElementById("confirmBtn");
@@ -272,20 +272,19 @@
     const shapeNameEl = document.getElementById("shapeName");
     const canvasHost = document.getElementById("canvasHost");
 
-    // 稜、頂點範圍：寬鬆一些，方便學生試錯（但仍合理）
-    // 3..60 足夠涵蓋 n=3..20 的角柱/角錐
-    function fillSelect(sel, min, max, defaultValue){
-      sel.innerHTML = "";
-      for(let i=min;i<=max;i++){
+    function fillSelect(select, min, max, defaultValue){
+      select.innerHTML = "";
+      for(let i=min; i<=max; i++){
         const opt = document.createElement("option");
         opt.value = String(i);
         opt.textContent = String(i);
-        sel.appendChild(opt);
+        select.appendChild(opt);
       }
-      sel.value = String(defaultValue);
+      select.value = String(defaultValue);
     }
 
-    fillSelect(edgesSel, 3, 60, 9);
+    // ✅ 按你的要求：稜 6–60，頂點 4–40
+    fillSelect(edgesSel, 6, 60, 9);
     fillSelect(vertsSel, 4, 40, 6);
 
     function setMsg(type, text){
@@ -294,10 +293,11 @@
       msgBox.style.display = text ? "block" : "none";
     }
 
-    // ====== 判斷：由（稜, 頂點）推回是 n角柱 / n角錐 ======
+    // ====== 判斷：由（稜 E, 頂點 V）推回是 n角柱 / n角錐 ======
+    // n角柱：V = 2n, E = 3n  => V必須為偶數, 且 2E = 3V
+    // n角錐：V = n+1, E = 2n => E = 2(V-1)
     function detectSolid(E, V){
-      // n角柱：V=2n, E=3n
-      // => V必須為偶數, 且 2E = 3V
+      // n角柱
       if (V % 2 === 0){
         const n = V / 2;
         if (n >= 3 && n <= 20 && (2 * E === 3 * V)){
@@ -305,7 +305,7 @@
         }
       }
 
-      // n角錐：V=n+1, E=2n => E = 2(V-1)
+      // n角錐
       {
         const n = V - 1;
         if (n >= 3 && n <= 20 && (E === 2 * n)){
@@ -359,9 +359,7 @@
       grid.material.transparent = true;
       scene.add(grid);
 
-      // 監聽 resize
       window.addEventListener("resize", onResize);
-
       animate();
     }
 
@@ -398,8 +396,7 @@
     // ====== 幾何：建立正n邊形（2D 點） ======
     function regularPolygonPoints(n, radius=1){
       const pts = [];
-      // 讓一個頂點朝上更直觀
-      const start = -Math.PI / 2;
+      const start = -Math.PI / 2; // 其中一個頂點向上，較直觀
       for (let i=0;i<n;i++){
         const a = start + i * (2*Math.PI/n);
         pts.push(new THREE.Vector2(Math.cos(a)*radius, Math.sin(a)*radius));
@@ -419,12 +416,9 @@
         steps: 1
       });
 
-      // Extrude 會沿 +Z 拉伸，把它置中並轉到 Y 方向比較像「直立」
       geo.computeBoundingBox();
       geo.center();
-
-      // 旋轉：令「拉伸方向」變成 Y 軸（直立）
-      geo.rotateX(Math.PI / 2);
+      geo.rotateX(Math.PI / 2); // 令柱身直立（沿 Y 軸）
 
       const mat = new THREE.MeshStandardMaterial({
         color: 0x66e3ff,
@@ -434,7 +428,7 @@
 
       const mesh = new THREE.Mesh(geo, mat);
 
-      // 加邊線，讓稜更清晰
+      // 邊線（稜更清楚）
       const edges = new THREE.EdgesGeometry(geo, 1);
       const line = new THREE.LineSegments(
         edges,
@@ -450,24 +444,23 @@
       const radius = 1.25;
       const height = 2.4;
 
-      // base points on XZ plane, y = 0
+      // 底面在 XZ 平面，y=0；頂點在 y=height
       const pts2 = regularPolygonPoints(n, radius);
       const base = pts2.map(p => new THREE.Vector3(p.x, 0, p.y));
       const apex = new THREE.Vector3(0, height, 0);
 
-      // 三角化底面（fan triangulation）
-      // faces: 底面 (0, i, i+1), 側面 (i, i+1, apex)
       const positions = [];
       const indices = [];
 
-      // push vertices: base then apex
+      // base vertices
       base.forEach(v => positions.push(v.x, v.y, v.z));
+      // apex vertex
       positions.push(apex.x, apex.y, apex.z);
       const apexIndex = n;
 
-      // 底面（為了顯示外形，不一定要做，但做咗會更完整）
+      // 底面三角化（fan）
       for (let i=1; i<n-1; i++){
-        indices.push(0, i+1, i); // 注意方向，令法線向下/上影響不大（有雙面可見）
+        indices.push(0, i+1, i);
       }
 
       // 側面
@@ -520,7 +513,7 @@
       const name = detected.type === "prism" ? `${detected.n}角柱` : `${detected.n}角錐`;
       shapeNameEl.textContent = name;
 
-      // 先顯示名稱，稍後再生成 3D（符合你要求：先名稱、再 3D）
+      // 先顯示名稱 → 稍後生成 3D（符合你要求）
       clearCurrent();
 
       setTimeout(() => {
@@ -531,7 +524,6 @@
         currentMesh = mesh;
         scene.add(mesh);
 
-        // 相機/控制器稍微調整觀感
         controls.target.set(0, 0.2, 0);
         controls.update();
 
@@ -540,7 +532,7 @@
     }
 
     function resetAll(){
-      // 重設到一個「三角柱」例子
+      // 重設到一個常見例子：三角柱（稜=9，頂點=6）
       edgesSel.value = "9";
       vertsSel.value = "6";
       shapeNameEl.textContent = "（尚未生成）";
@@ -552,7 +544,7 @@
     confirmBtn.addEventListener("click", generateFromInputs);
     resetBtn.addEventListener("click", resetAll);
 
-    // Enter 鍵也可確定
+    // Enter 亦可確定
     window.addEventListener("keydown", (e) => {
       if (e.key === "Enter") generateFromInputs();
     });
